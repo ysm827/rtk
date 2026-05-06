@@ -1,8 +1,6 @@
 //! Sets up RTK hooks so AI coding agents automatically route commands through RTK.
 
 use anyhow::{Context, Result};
-use lazy_static::lazy_static;
-use regex::Regex;
 use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -28,7 +26,6 @@ const PI_PLUGIN: &str = include_str!("../../hooks/pi/rtk.ts");
 // Embedded slim RTK awareness instructions
 const RTK_SLIM: &str = include_str!("../../hooks/claude/rtk-awareness.md");
 const RTK_SLIM_CODEX: &str = include_str!("../../hooks/codex/rtk-awareness.md");
-const RTK_SLIM_PI: &str = include_str!("../../hooks/pi/rtk-awareness.md");
 
 /// Template written by `rtk init` when no filters.toml exists yet.
 const FILTERS_TEMPLATE: &str = r#"# Project-local RTK filters — commit this file with your repo.
@@ -581,7 +578,6 @@ pub fn uninstall(
 
     if pi {
         let plugin_path = pi_plugin_path_for_scope(global)?;
-        let agents_md = pi_agents_md_path_for_scope(global)?;
         let mut removed: Vec<String> = Vec::new();
 
         if plugin_path.exists() {
@@ -592,12 +588,6 @@ pub fn uninstall(
                 eprintln!("Removed Pi extension: {}", plugin_path.display());
             }
             removed.push(format!("Pi extension: {}", plugin_path.display()));
-        }
-
-        let awareness_removed = remove_pi_awareness(&agents_md, verbose)
-            .context("Failed to remove Pi awareness block")?;
-        if awareness_removed {
-            removed.push(format!("Pi awareness: {}", agents_md.display()));
         }
 
         if !removed.is_empty() {
@@ -1903,139 +1893,18 @@ fn pi_plugin_path_for_scope(global: bool) -> Result<PathBuf> {
     }
 }
 
-/// Return the AGENTS.md path for the given Pi install scope.
-/// global=true  → `$PI_CODING_AGENT_DIR/AGENTS.md`
-/// global=false → `./AGENTS.md`
-fn pi_agents_md_path_for_scope(global: bool) -> Result<PathBuf> {
-    if global {
-        Ok(resolve_pi_dir()?.join(AGENTS_MD))
-    } else {
-        Ok(PathBuf::from(AGENTS_MD))
-    }
-}
-
 /// Write the Pi extension file if missing or outdated. Returns true if written.
 fn ensure_pi_plugin_installed(path: &Path, verbose: u8) -> Result<bool> {
     write_if_changed(path, PI_PLUGIN, "Pi extension", verbose)
 }
 
-/// Sentinel constants for the Pi awareness block in AGENTS.md.
-const PI_AWARENESS_START: &str = "<!-- rtk-pi-start v1 -->";
-const PI_AWARENESS_END: &str = "<!-- rtk-pi-end -->";
-
-lazy_static! {
-    /// Matches the full sentinel block including any preceding newline so
-    /// replacement leaves no double-blank gaps.
-    static ref PI_SENTINEL_RE: Regex =
-        Regex::new(r"(?s)\n?<!-- rtk-pi-start[^>]*-->.*?<!-- rtk-pi-end -->").unwrap();
-}
-
-/// Build the full sentinel-wrapped awareness block.
-fn pi_awareness_block() -> String {
-    format!(
-        "{}\n{}\n{}",
-        PI_AWARENESS_START,
-        RTK_SLIM_PI.trim(),
-        PI_AWARENESS_END
-    )
-}
-
-/// Append or update the RTK awareness block in a Pi AGENTS.md file.
+/// Install the Pi extension (hook-only; no AGENTS.md injection).
 ///
-/// Uses sentinel comments for idempotent install / version-bump updates:
-/// - Sentinels absent  → append block with a blank-line separator
-/// - Sentinels present, content identical → no-op
-/// - Sentinels present, content differs   → replace block in-place
-fn install_pi_awareness(agents_md_path: &Path, verbose: u8) -> Result<()> {
-    let block = pi_awareness_block();
-
-    if agents_md_path.exists() {
-        let existing = fs::read_to_string(agents_md_path)
-            .with_context(|| format!("Failed to read {}", agents_md_path.display()))?;
-
-        if existing.contains(&block) {
-            if verbose > 0 {
-                eprintln!(
-                    "Pi awareness already up to date: {}",
-                    agents_md_path.display()
-                );
-            }
-            return Ok(());
-        }
-
-        let updated = if PI_SENTINEL_RE.is_match(&existing) {
-            // Sentinels present but content differs (version bump) — replace in-place.
-            PI_SENTINEL_RE
-                .replace(&existing, format!("\n{}", block).as_str())
-                .into_owned()
-        } else {
-            // No sentinels yet — append with a blank-line separator.
-            format!("{}\n\n{}", existing.trim_end(), block)
-        };
-
-        atomic_write(agents_md_path, &updated)
-            .with_context(|| format!("Failed to write {}", agents_md_path.display()))?;
-
-        if verbose > 0 {
-            eprintln!("Updated Pi awareness: {}", agents_md_path.display());
-        }
-    } else {
-        // File absent — create it containing only the awareness block.
-        atomic_write(agents_md_path, &block)
-            .with_context(|| format!("Failed to create {}", agents_md_path.display()))?;
-
-        if verbose > 0 {
-            eprintln!("Created Pi awareness: {}", agents_md_path.display());
-        }
-    }
-
-    Ok(())
-}
-
-/// Remove the RTK awareness sentinel block from an AGENTS.md file.
-/// Returns true if a block was found and removed, false if absent or file missing.
-fn remove_pi_awareness(agents_md_path: &Path, verbose: u8) -> Result<bool> {
-    if !agents_md_path.exists() {
-        return Ok(false);
-    }
-
-    let existing = fs::read_to_string(agents_md_path)
-        .with_context(|| format!("Failed to read {}", agents_md_path.display()))?;
-
-    if !PI_SENTINEL_RE.is_match(&existing) {
-        return Ok(false);
-    }
-
-    let updated = PI_SENTINEL_RE.replace(&existing, "").into_owned();
-    atomic_write(agents_md_path, updated.trim_end())
-        .with_context(|| format!("Failed to write {}", agents_md_path.display()))?;
-
-    if verbose > 0 {
-        eprintln!(
-            "Removed Pi awareness block from: {}",
-            agents_md_path.display()
-        );
-    }
-
-    Ok(true)
-}
-
-/// Install the Pi extension and inject the awareness block into AGENTS.md.
-///
-/// global=true  → `$PI_CODING_AGENT_DIR/extensions/rtk.ts` + `$PI_CODING_AGENT_DIR/AGENTS.md`
-/// global=false → `.pi/extensions/rtk.ts` + `./AGENTS.md`
-///
-/// AGENTS.md injection is skipped in global mode when the Pi config directory
-/// did not previously exist (the user has not yet run `pi`). The extension is
-/// still written so the user gets immediate coverage once they do initialise Pi.
+/// global=true  → `$PI_CODING_AGENT_DIR/extensions/rtk.ts`
+/// global=false → `.pi/extensions/rtk.ts`
 pub fn run_pi_mode(global: bool, verbose: u8) -> Result<()> {
-    let mut should_install_awareness = true;
-
     let plugin_path = if global {
         let pi_dir = resolve_pi_dir()?;
-        // Capture existence *before* we create subdirectories.
-        let pi_dir_preexisting = pi_dir.exists();
-
         let path = pi_plugin_path(&pi_dir);
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent).with_context(|| {
@@ -2045,11 +1914,6 @@ pub fn run_pi_mode(global: bool, verbose: u8) -> Result<()> {
                 )
             })?;
         }
-
-        if !pi_dir_preexisting {
-            should_install_awareness = false;
-        }
-
         path
     } else {
         let path = pi_plugin_path_for_scope(false)?;
@@ -2065,25 +1929,12 @@ pub fn run_pi_mode(global: bool, verbose: u8) -> Result<()> {
     };
 
     let installed = ensure_pi_plugin_installed(&plugin_path, verbose)?;
-    let agents_md_path = pi_agents_md_path_for_scope(global)?;
-
-    if should_install_awareness {
-        install_pi_awareness(&agents_md_path, verbose)?;
-        print_pi_result(&plugin_path, Some(&agents_md_path), installed);
-    } else {
-        eprintln!(
-            "[rtk] Pi config directory not found ({}).\n\
-             Extension installed but skipping AGENTS.md injection.\n\
-             Create the directory or run `pi` once to initialise it.",
-            resolve_pi_dir()?.display()
-        );
-        print_pi_result(&plugin_path, None, installed);
-    }
+    print_pi_result(&plugin_path, installed);
 
     Ok(())
 }
 
-fn print_pi_result(plugin_path: &Path, agents_md_path: Option<&Path>, installed: bool) {
+fn print_pi_result(plugin_path: &Path, installed: bool) {
     let status = if installed {
         "installed"
     } else {
@@ -2091,9 +1942,6 @@ fn print_pi_result(plugin_path: &Path, agents_md_path: Option<&Path>, installed:
     };
     println!("RTK Pi extension {}:", status);
     println!("  Extension: {}", plugin_path.display());
-    if let Some(p) = agents_md_path {
-        println!("  AGENTS.md: {}", p.display());
-    }
     println!();
     println!("Pi will load the extension automatically on next start.");
     println!("Verify: pi -e {} --no-session", plugin_path.display());
@@ -4287,28 +4135,18 @@ mod tests {
     }
 
     #[test]
-    fn test_run_pi_mode_global_injects_awareness() {
+    fn test_run_pi_mode_global_does_not_create_agents_md() {
         let tmp = TempDir::new().unwrap();
         with_pi_dir_override(&tmp, |pi_dir| {
             run_pi_mode(true, 0).unwrap();
 
             let agents_md = pi_dir.join(AGENTS_MD);
-            assert!(agents_md.exists(), "AGENTS.md must be created");
-
-            let content = fs::read_to_string(&agents_md).unwrap();
-            assert!(
-                content.contains(PI_AWARENESS_START),
-                "AGENTS.md must contain sentinel start"
-            );
-            assert!(
-                content.contains(PI_AWARENESS_END),
-                "AGENTS.md must contain sentinel end"
-            );
+            assert!(!agents_md.exists(), "AGENTS.md must not be created");
         });
     }
 
     #[test]
-    fn test_run_pi_mode_global_skips_awareness_when_dir_absent() {
+    fn test_run_pi_mode_global_creates_plugin_when_dir_absent() {
         let tmp = TempDir::new().unwrap();
         let absent_dir = tmp.path().join("no_such_pi_dir");
         let _guard = PI_DIR_LOCK.lock().unwrap_or_else(|e| e.into_inner());
@@ -4331,135 +4169,26 @@ mod tests {
         );
 
         let agents_md = absent_dir.join(AGENTS_MD);
-        assert!(
-            !agents_md.exists(),
-            "AGENTS.md must not be created when Pi dir was absent"
-        );
+        assert!(!agents_md.exists(), "AGENTS.md must not be created");
     }
 
     #[test]
-    fn test_install_pi_awareness_appends_to_existing_file() {
-        let tmp = TempDir::new().unwrap();
-        let path = tmp.path().join(AGENTS_MD);
-        fs::write(&path, "# Existing content\n").unwrap();
-
-        install_pi_awareness(&path, 0).unwrap();
-
-        let content = fs::read_to_string(&path).unwrap();
-        assert!(content.contains("# Existing content"));
-        assert!(content.contains(PI_AWARENESS_START));
-        assert!(content.contains(PI_AWARENESS_END));
-    }
-
-    #[test]
-    fn test_install_pi_awareness_idempotent() {
-        let tmp = TempDir::new().unwrap();
-        let path = tmp.path().join(AGENTS_MD);
-
-        install_pi_awareness(&path, 0).unwrap();
-        let content_after_first = fs::read_to_string(&path).unwrap();
-
-        install_pi_awareness(&path, 0).unwrap();
-        let content_after_second = fs::read_to_string(&path).unwrap();
-
-        assert_eq!(
-            content_after_first, content_after_second,
-            "second install must be a no-op"
-        );
-        assert_eq!(content_after_second.matches(PI_AWARENESS_START).count(), 1);
-    }
-
-    #[test]
-    fn test_install_pi_awareness_replaces_stale_block() {
-        let tmp = TempDir::new().unwrap();
-        let path = tmp.path().join(AGENTS_MD);
-
-        let stale =
-            format!("# Existing\n\n<!-- rtk-pi-start v0 -->\nstale content\n<!-- rtk-pi-end -->");
-        fs::write(&path, &stale).unwrap();
-
-        install_pi_awareness(&path, 0).unwrap();
-
-        let content = fs::read_to_string(&path).unwrap();
-        assert!(
-            !content.contains("stale content"),
-            "old block must be replaced"
-        );
-        assert!(
-            content.contains(PI_AWARENESS_START),
-            "new sentinel must be present"
-        );
-        assert_eq!(content.matches("<!-- rtk-pi-start").count(), 1);
-    }
-
-    #[test]
-    fn test_remove_pi_awareness_removes_block() {
-        let tmp = TempDir::new().unwrap();
-        let path = tmp.path().join(AGENTS_MD);
-        fs::write(&path, "# Existing\n").unwrap();
-
-        install_pi_awareness(&path, 0).unwrap();
-        assert!(fs::read_to_string(&path)
-            .unwrap()
-            .contains(PI_AWARENESS_START));
-
-        let removed = remove_pi_awareness(&path, 0).unwrap();
-        assert!(removed, "must report true when block was present");
-        let content = fs::read_to_string(&path).unwrap();
-        assert!(
-            !content.contains(PI_AWARENESS_START),
-            "sentinel must be removed"
-        );
-        assert!(
-            !content.contains(PI_AWARENESS_END),
-            "sentinel end must be removed"
-        );
-    }
-
-    #[test]
-    fn test_remove_pi_awareness_noop_when_absent() {
-        let tmp = TempDir::new().unwrap();
-        let path = tmp.path().join(AGENTS_MD);
-        fs::write(&path, "# No rtk block here\n").unwrap();
-
-        let removed = remove_pi_awareness(&path, 0).unwrap();
-        assert!(!removed, "must report false when no block present");
-        let content = fs::read_to_string(&path).unwrap();
-        assert_eq!(content, "# No rtk block here\n", "file must be unchanged");
-    }
-
-    #[test]
-    fn test_remove_pi_awareness_noop_when_file_missing() {
-        let tmp = TempDir::new().unwrap();
-        let path = tmp.path().join(AGENTS_MD);
-        let removed = remove_pi_awareness(&path, 0).unwrap();
-        assert!(!removed, "must report false when file missing");
-    }
-
-    #[test]
-    fn test_pi_global_uninstall_removes_plugin_and_awareness() {
+    fn test_pi_global_uninstall_removes_plugin() {
         let tmp = TempDir::new().unwrap();
         with_pi_dir_override(&tmp, |pi_dir| {
             run_pi_mode(true, 0).unwrap();
 
             let plugin = pi_dir.join(PI_EXTENSIONS_SUBDIR).join(PI_PLUGIN_FILE);
-            let agents_md = pi_dir.join(AGENTS_MD);
             assert!(plugin.exists());
-            assert!(agents_md.exists());
 
             uninstall(true, false, false, false, true, 0).unwrap();
 
             assert!(!plugin.exists(), "plugin must be removed");
-            let content = fs::read_to_string(&agents_md).unwrap_or_default();
-            assert!(
-                !content.contains(PI_AWARENESS_START),
-                "awareness block must be removed"
-            );
         });
     }
 
     #[test]
-    fn test_pi_local_uninstall_removes_plugin_and_awareness() {
+    fn test_pi_local_uninstall_removes_plugin() {
         let tmp = TempDir::new().unwrap();
         let _cwd_guard = CWD_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let cwd = std::env::current_dir().unwrap();
@@ -4476,13 +4205,6 @@ mod tests {
             .join(PI_EXTENSIONS_SUBDIR)
             .join(PI_PLUGIN_FILE);
         assert!(!plugin.exists(), "local plugin must be removed");
-
-        let agents_md = tmp.path().join(AGENTS_MD);
-        let content = fs::read_to_string(&agents_md).unwrap_or_default();
-        assert!(
-            !content.contains(PI_AWARENESS_START),
-            "local awareness block must be removed"
-        );
     }
 
     #[test]

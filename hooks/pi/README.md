@@ -10,7 +10,6 @@
 - Returns `{ block: true, reason }` on deny (exit code 2); all other error paths return `undefined`
 - Version guard at load time: checks `rtk >= 0.23.0`; warns and registers no-op if too old or missing
 - Installed to `.pi/extensions/rtk.ts` by `rtk init --pi` (project-local) or `~/.pi/agent/extensions/rtk.ts` by `rtk init --pi --global`
-- `rtk-awareness.md` is embedded into `AGENTS.md` by `rtk init --pi`
 
 ## Uninstall
 
@@ -18,12 +17,10 @@
 # Remove project-local install (run from the project root)
 rtk init --uninstall --pi
 # → removes .pi/extensions/rtk.ts
-# → removes RTK awareness block from AGENTS.md (if present)
 
 # Remove global install
 rtk init --uninstall --pi --global
 # → removes ~/.pi/agent/extensions/rtk.ts
-# → removes RTK awareness block from ~/.pi/agent/AGENTS.md
 
 # Pi-only target form also works
 rtk init --uninstall --agent pi
@@ -31,7 +28,7 @@ rtk init --uninstall --agent pi --global
 ```
 
 Uninstall is idempotent — re-running when nothing is installed is a no-op.
-Both the extension file and the awareness block are reported individually when removed.
+Only the extension file is managed by install/uninstall.
 
 ## Testing
 

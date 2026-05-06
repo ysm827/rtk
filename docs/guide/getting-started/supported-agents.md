@@ -99,7 +99,7 @@ rtk init --agent pi
 rtk init --agent pi --global
 ```
 
-Creates `.pi/extensions/rtk.ts` (local) or `~/.pi/agent/extensions/rtk.ts` (global) and appends an RTK awareness block to `AGENTS.md`. Pi auto-discovers extensions from both paths on startup.
+Creates `.pi/extensions/rtk.ts` (local) or `~/.pi/agent/extensions/rtk.ts` (global). Pi auto-discovers extensions from both paths on startup.
 
 Uninstall:
 
@@ -107,6 +107,8 @@ Uninstall:
 rtk init --uninstall --pi
 rtk init --uninstall --pi --global
 ```
+
+Removes only the installed Pi extension file.
 
 ### OpenClaw
 

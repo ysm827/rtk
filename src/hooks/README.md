@@ -30,7 +30,7 @@ LLM agent integration layer that installs, validates, and executes command-rewri
 | Cline | `rtk init --agent cline` | `.clinerules` | -- |
 | Codex | `rtk init --codex` | RTK.md in `$CODEX_HOME` or `~/.codex` | AGENTS.md |
 | Cursor | `rtk init -g --agent cursor` | Cursor hook | hooks.json |
-| Pi | `rtk init --pi` | `.pi/extensions/rtk.ts` | AGENTS.md (awareness block) |
+| Pi | `rtk init --pi` | `.pi/extensions/rtk.ts` | -- |
 
 
 ## Integrity Verification

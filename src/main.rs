@@ -3033,7 +3033,11 @@ mod tests {
         let cli = Cli::try_parse_from(["rtk", "init", "--agent", "pi"]).unwrap();
         match cli.command {
             Commands::Init { agent, .. } => {
-                assert_eq!(agent, Some(AgentTarget::Pi), "--agent pi must set Pi variant");
+                assert_eq!(
+                    agent,
+                    Some(AgentTarget::Pi),
+                    "--agent pi must set Pi variant"
+                );
             }
             _ => panic!("Expected Init command"),
         }
@@ -3041,8 +3045,7 @@ mod tests {
 
     #[test]
     fn test_init_uninstall_pi_parses() {
-        let cli =
-            Cli::try_parse_from(["rtk", "init", "--uninstall", "--pi", "--global"]).unwrap();
+        let cli = Cli::try_parse_from(["rtk", "init", "--uninstall", "--pi", "--global"]).unwrap();
         match cli.command {
             Commands::Init {
                 uninstall,
