@@ -3196,6 +3196,7 @@ mod tests {
         );
     }
 
+    #[test]
     fn test_ultra_compact_long_form_still_works() {
         let cli = Cli::try_parse_from(["rtk", "--ultra-compact", "git", "status"]).unwrap();
         assert!(
